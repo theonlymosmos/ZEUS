@@ -1,0 +1,24 @@
+# Secrets — never commit
+*.pem
+*.key
+.env
+config/.env
+
+# Local-only notes holding real IPs / endpoints
+LOCAL-REFERENCE.md
+
+# Cowrie / Dionaea runtime data
+cowrie-logs/
+dionaea-logs/
+*.pickle
+
+# Captured attacker payloads — treat as hostile, never commit
+downloads/
+binaries/
+bistreams/
+tty/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp

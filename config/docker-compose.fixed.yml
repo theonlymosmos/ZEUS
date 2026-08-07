@@ -1,0 +1,98 @@
+# Project Zeus honeynet — CORRECTED stack definition.
+#
+# Use THIS file to rebuild from scratch. See docs/11-rebuild-from-scratch.md.
+#
+# `docker-compose.yml` alongside this one is the AS-DEPLOYED file, preserved
+# verbatim as a record — it contains the defects catalogued in docs/09. This
+# file applies the fixes:
+#
+#   F-01  all Cowrie paths corrected to /cowrie/... (were /home/cowrie/...),
+#         and Cowrie is BUILT from ./cowrie-custom so honeyfs, userdb.txt and
+#         the generated fake filesystem are baked into the image
+#   F-03  named volumes for Splunk's index + config, and Dionaea's captures,
+#         so `docker compose down` no longer destroys them
+#   F-04  Splunk password comes from .env and the stack refuses to start
+#         without it
+#   F-05  Splunk Web bound to loopback; reach it over an SSH tunnel
+#
+# With F-01 fixed, Cowrie writes straight to ./cowrie-logs — the log-bridge
+# workaround (sync_logs.sh + honeynet-sync.service) is NO LONGER NEEDED.
+
+services:
+  cowrie:
+    build:
+      context: ./cowrie-custom
+    image: honeynet-cowrie-custom:latest
+    container_name: cowrie_honeypot
+    hostname: prod-app-01
+    ports:
+      - "2222:2222"
+      - "2223:2223"
+    environment:
+      - COWRIE_TELNET_ENABLED=yes
+      # COWRIE_SHELL_FILESYSTEM is set by the Dockerfile.
+    volumes:
+      - ./cowrie-logs:/cowrie/cowrie-git/var/log/cowrie
+      - cowrie-var:/cowrie/cowrie-git/var/lib/cowrie   # tty replays + payloads
+    restart: unless-stopped
+    networks:
+      - honeynet
+
+  dionaea:
+    image: dinotools/dionaea:latest
+    container_name: dionaea_honeypot
+    ports:
+      - "21:21"
+      - "2121:21"
+      # Optional extra services. Open matching NSG rules only if you want them.
+      # - "445:445"      # SMB — attracts a LOT of worm traffic
+      # - "1433:1433"    # MSSQL
+      # - "3306:3306"    # MySQL
+      # - "80:80"        # HTTP
+    volumes:
+      - ./dionaea-logs:/opt/dionaea/var/log/dionaea
+      - dionaea-lib:/opt/dionaea/var/lib     # F-03: captured binaries persist
+      - dionaea-etc:/opt/dionaea/etc
+    restart: unless-stopped
+    networks:
+      - honeynet
+
+  splunk:
+    image: splunk/splunk:latest
+    container_name: splunk_dashboard
+    hostname: splunk
+    environment:
+      # BOTH licence variables are mandatory. Omitting either causes a silent
+      # boot-loop rather than a useful error message.
+      - SPLUNK_START_ARGS=--accept-license
+      - SPLUNK_GENERAL_TERMS=--accept-sgt-current-at-splunk-com
+      # F-04: fail loudly rather than starting with an empty password.
+      - SPLUNK_PASSWORD=${SPLUNK_PASSWORD:?set SPLUNK_PASSWORD in .env}
+    ports:
+      # F-05: loopback only. Reach it with:
+      #   ssh -i <key>.pem -L 8000:localhost:8000 azureuser@<VM_PUBLIC_IP>
+      # then browse http://localhost:8000
+      # To publish it instead, use "8000:8000" AND restrict port 8000 in the
+      # Azure NSG to your own IP.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - splunk-etc:/opt/splunk/etc          # F-03: config + dashboards persist
+      - splunk-var:/opt/splunk/var          # F-03: the index persists
+      - ./cowrie-logs:/data/cowrie/log:ro
+      - ./dionaea-logs:/data/dionaea/log:ro
+      - dionaea-lib:/data/dionaea/lib:ro
+      - ./splunk_apps/honeynet_inputs:/opt/splunk/etc/apps/honeynet_inputs:rw
+    restart: unless-stopped
+    networks:
+      - honeynet
+
+volumes:
+  cowrie-var:
+  dionaea-etc:
+  dionaea-lib:
+  splunk-etc:
+  splunk-var:
+
+networks:
+  honeynet:
+    driver: bridge

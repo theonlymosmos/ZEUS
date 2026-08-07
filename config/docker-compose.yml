@@ -1,0 +1,59 @@
+version: "3.8"
+
+services:
+  cowrie:
+    image: cowrie/cowrie:latest
+    container_name: cowrie_honeypot
+    hostname: prod-app-01
+    ports:
+      - "2222:2222"
+      - "2223:2223"
+    environment:
+      - COWRIE_TELNET_ENABLED=yes
+      # Essential: This tells the shell where to find the custom file map
+      - COWRIE_SHELL_FILESYSTEM=/home/cowrie/cowrie-git/share/cowrie/lab_fs.pickle
+    volumes:
+      - ./cowrie-logs:/home/cowrie/cowrie-git/var/log/cowrie
+      - ./cowrie-custom/honeyfs:/home/cowrie/cowrie-git/honeyfs:ro
+      - ./cowrie-custom/userdb.txt:/home/cowrie/cowrie-git/etc/userdb.txt:ro
+      # Forces the metadata file into the path Cowrie expects
+      - ./cowrie-custom/lab_fs.pickle:/home/cowrie/cowrie-git/share/cowrie/lab_fs.pickle:ro
+    restart: always
+    networks:
+      - honeynet
+
+  dionaea:
+    image: dinotools/dionaea:latest
+    container_name: dionaea_honeypot
+    ports:
+      - "21:21"
+      - "2121:21"
+    volumes:
+      - ./dionaea-logs:/opt/dionaea/var/log/dionaea
+    restart: always
+    networks:
+      - honeynet
+
+  splunk:
+    image: splunk/splunk:latest
+    container_name: splunk_dashboard
+    hostname: splunk
+    environment:
+      - SPLUNK_START_ARGS=--accept-license
+      - SPLUNK_GENERAL_TERMS=--accept-sgt-current-at-splunk-com
+      # Read from .env — never hardcode. See docs/09-findings-and-fixes.md (F-04).
+      - SPLUNK_PASSWORD=${SPLUNK_PASSWORD}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./cowrie-logs:/data/cowrie/log:ro
+      - ./dionaea-logs:/data/dionaea/log:ro
+      - ./splunk_apps/honeynet_inputs:/opt/splunk/etc/apps/honeynet_inputs:rw
+    restart: always
+    networks:
+      - honeynet
+
+networks:
+  honeynet:
+    driver: bridge
+

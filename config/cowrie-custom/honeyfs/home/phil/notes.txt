@@ -1,0 +1,5 @@
+TODO:
+- rotate Zeus database password after migration
+- remove old SQL dump from home directory
+- verify Splunk forwarder status
+- disable test admin account before production handoff

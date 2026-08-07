@@ -1,0 +1,13 @@
+[Unit]
+Description=Honeynet Ghost Volume Sync
+After=docker.service
+Requires=docker.service
+
+[Service]
+ExecStart=/home/azureuser/honeynet/sync_logs.sh
+Restart=always
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target

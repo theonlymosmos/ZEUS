@@ -1,0 +1,4 @@
+Apr 27 01:58:31 prod-app-01 sshd[2188]: Accepted password for phil from 10.10.4.22 port 51244 ssh2
+Apr 27 02:00:11 prod-app-01 sudo: phil : TTY=pts/0 ; PWD=/home/phil ; USER=root ; COMMAND=/usr/local/bin/backup-db.sh
+Apr 27 02:03:44 prod-app-01 sshd[2331]: Failed password for invalid user test from 185.220.101.45 port 39412 ssh2
+Apr 27 02:04:02 prod-app-01 sshd[2331]: Connection closed by invalid user test 185.220.101.45 port 39412 [preauth]
