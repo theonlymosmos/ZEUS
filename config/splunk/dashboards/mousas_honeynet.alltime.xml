@@ -1,0 +1,190 @@
+<form version="1.1" theme="dark">
+  <label>Project Zeus: Executive Security Command</label>
+  <description>Advanced Real-Time Threat Intelligence &amp; Forensic Audit</description>
+
+  <!--
+    SCREENSHOT / PRESENTATION VARIANT of mousas_honeynet.xml.
+
+    The original hardcodes "Total Forensic Events" to the last 24 hours, so it
+    renders 0 whenever the honeypot has been idle or recently restarted - which
+    is exactly when you want a screenshot of the full dataset.
+
+    This version adds a global time picker defaulting to ALL TIME, wired into
+    every panel. Set it to "Last 15 minutes" for a live demo, or leave it on
+    All time to show the complete collection history.
+  -->
+
+  <fieldset submitButton="false" autoRun="true">
+    <input type="time" token="tr" searchWhenChanged="true">
+      <label>Time range</label>
+      <default>
+        <earliest>0</earliest>
+        <latest></latest>
+      </default>
+    </input>
+  </fieldset>
+
+  <row>
+    <panel>
+      <title>Total Forensic Events</title>
+      <single>
+        <search>
+          <query>index=main sourcetype="cowrie:json" | stats count</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[50,150]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Unique Threat Actors (IPs)</title>
+      <single>
+        <search>
+          <query>index=main sourcetype="cowrie:json" | stats dc(src_ip)</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+      </single>
+    </panel>
+    <panel>
+      <title>CRITICAL: Successful Breaches</title>
+      <single>
+        <search>
+          <query>index=main sourcetype="cowrie:json" eventid=cowrie.login.success | stats count</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x53a051","0xdc4e41"]</option>
+        <option name="rangeValues">[0]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Attack Activity Timeline (Daily Trend)</title>
+      <chart>
+        <search>
+          <query>index=main sourcetype="cowrie:json"
+| eval Action=case(
+    eventid=="cowrie.login.success", "Login Success",
+    eventid=="cowrie.command.input", "Command Executed",
+    eventid=="cowrie.session.file_download", "Malware Download",
+    eventid=="cowrie.login.failed", "Brute Force Attempt")
+| where isnotnull(Action)
+| timechart span=1d count by Action</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+
+      <html><hr/></html>
+
+      <html><h3>Threat Intel: Top 10 Guessed Passwords</h3></html>
+      <chart>
+        <search>
+          <query>index=main sourcetype="cowrie:json" eventid=cowrie.login.failed
+| rex field=_raw "\"password\":\s*\"(?&lt;raw_pass&gt;[^\"]+)\""
+| eval password=coalesce(password, raw_pass)
+| top limit=10 password</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.legend.placement">none</option>
+        <option name="charting.axisTitleX.text">Password</option>
+        <option name="charting.axisTitleY.text">Attempt Count</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Active Breach Details (Who, How, Where)</title>
+      <table>
+        <search>
+          <query>index=main sourcetype="cowrie:json" eventid=cowrie.login.success
+| rex field=_raw "\"src_ip\":\s*\"(?&lt;raw_ip&gt;[^\"]+)\""
+| rex field=_raw "\"username\":\s*\"(?&lt;raw_user&gt;[^\"]+)\""
+| rex field=_raw "\"password\":\s*\"(?&lt;raw_pass&gt;[^\"]+)\""
+| eval src_ip=coalesce(src_ip, raw_ip)
+| eval username=coalesce(username, raw_user)
+| eval password=coalesce(password, raw_pass)
+| iplocation src_ip
+| table _time, src_ip, City, Country, username, password
+| rename src_ip AS "Attacker", username AS "Target User", password AS "Used Password"
+| sort - _time</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Global Threat Map</title>
+      <map>
+        <search>
+          <query>index=main sourcetype="cowrie:json" | iplocation src_ip | geostats count by Country</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="mapping.type">marker</option>
+      </map>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Live Attack Narrative (Filtered for Commands &amp; Downloads)</title>
+      <table>
+        <search>
+          <query>index=main sourcetype="cowrie:json"
+| rex field=_raw "\"src_ip\":\s*\"(?&lt;raw_ip&gt;[^\"]+)\""
+| eval src_ip=coalesce(src_ip, raw_ip)
+| eventstats values(src_ip) as src_ip by session
+| eval Action=case(
+    eventid=="cowrie.login.success", "🔓 LOGIN SUCCESS",
+    eventid=="cowrie.command.input", "⌨️ COMMAND EXECUTED",
+    eventid=="cowrie.session.file_download", "📦 MALWARE DOWNLOADED",
+    eventid=="cowrie.login.failed", "🚫 BRUTE FORCE")
+| where isnotnull(Action)
+| eval Details = coalesce(input, url, "User: ".username." | Pass: ".password)
+| eval Details = trim(Details)
+| where Details!=""
+| table _time, src_ip, Action, Details
+| sort - _time
+| rename src_ip AS "Source IP", Details AS "Activity Details"</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Signature Intelligence (VirusTotal Integration)</title>
+      <table>
+        <search>
+          <query>index=main sourcetype="cowrie:json" eventid=cowrie.session.file_download | table _time, src_ip, url, shasum | rename shasum AS "SHA256_Hash"</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <drilldown>
+          <condition field="SHA256_Hash">
+            <link target="_blank">https://www.virustotal.com/gui/search/$row.SHA256_Hash$</link>
+          </condition>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+</form>
