@@ -200,6 +200,109 @@ grep "cowrie.login.success" ~/honeynet/cowrie-logs/cowrie.json \
 tail -f ~/honeynet/dionaea-logs/dionaea.log | grep -v 'Cleanup'
 ```
 
+## 7.4b Stopping and restarting the VM
+
+Deallocating the VM from the Azure portal is safe for your data — but two things
+bite on the way back up. Read this before restarting.
+
+### What survives a VM stop
+
+Stopping the VM is **not** `docker compose down`. The OS disk persists, and every
+container carries `restart: always`, so Docker brings them back on boot with
+their writable layers intact.
+
+| Data | Survives VM stop? | Notes |
+|---|---|---|
+| Cowrie logs, TTY replays, payloads | ✅ | Anonymous volume on the OS disk |
+| Splunk index — every event | ✅ | Container layer; only `compose down` destroys it |
+| `mousas_honeynet` dashboard | ✅ | Same |
+| Dionaea captures + bistreams | ✅ | Same |
+| Config, systemd unit, cron | ✅ | On disk |
+
+The persistence gap in [F-03](09-findings-and-fixes.md) is triggered by
+`docker compose down`, **not** by stopping the VM. Do not confuse the two.
+
+### ⚠️ 1. The public IP will change
+
+Deallocating releases a *dynamic* public IP. On next boot Azure assigns a new
+one — every bookmark, SSH config entry and shared link breaks.
+
+```bash
+# Get the new address
+az vm list-ip-addresses -g rg-honeynet-demo -n mousahoneypot -o table
+# or: Azure portal > Virtual machines > <VM> > Overview > Public IP address
+```
+
+Make it permanent so this stops recurring:
+
+```bash
+az network public-ip update -g rg-honeynet-demo -n <public-ip-name> \
+  --allocation-method Static
+```
+
+### ⚠️ 2. The duplicate-tail bug fires on boot
+
+This is the one that actually costs you data quality. If the cron `@reboot` entry
+from [F-02](09-findings-and-fixes.md) is still present, **both** it and
+`honeynet-sync.service` start a `tail -F` against the same log, both appending to
+the same destination. Every Cowrie event is then written twice and indexed twice.
+
+It stays latent until a reboot — so the *first restart after installing the
+systemd unit* is when it appears.
+
+```bash
+# Remove the cron entry (the systemd unit already handles boot)
+crontab -e        # delete the "@reboot ... sync_logs.sh" line
+crontab -l        # confirm it is gone
+```
+
+### Restart checklist
+
+```bash
+# 1. Start the VM (portal, or:)
+az vm start -g rg-honeynet-demo -n mousahoneypot
+
+# 2. Get the new IP, then SSH in
+az vm list-ip-addresses -g rg-honeynet-demo -n mousahoneypot -o table
+ssh -i <key>.pem azureuser@<NEW_IP>
+
+# 3. Kill the duplicate bridge BEFORE trusting any new data
+crontab -l | grep honeynet          # if present, crontab -e and delete it
+ps aux | grep '[t]ail -F' | grep -c cowrie   # MUST be exactly 1
+
+# 4. If it is 2 or more, clean up:
+sudo pkill -f "tail -F /var/lib/docker/volumes"
+sudo systemctl restart honeynet-sync.service
+ps aux | grep '[t]ail -F' | grep -c cowrie   # now 1
+
+# 5. Normal health check
+sudo docker ps --format 'table {{.Names}}\t{{.Status}}'
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:8000   # 303
+ls -lh ~/honeynet/cowrie-logs/cowrie.json
+
+# 6. Confirm your history is still indexed (not just new events)
+#    In Splunk:  index=main sourcetype=cowrie:json earliest=-120d | stats count
+#    Expect your full historical count, not a handful.
+
+# 7. Update the NSG if your own public IP changed too — ports 22 and 8000
+#    are scoped to it.
+```
+
+Splunk needs 2–5 minutes to become `(healthy)` after boot. An early `curl`
+returning `000` or `502` is normal; re-check before assuming breakage.
+
+### Check for duplicates that already got indexed
+
+```spl
+index=main sourcetype=cowrie:json
+| stats count by _raw
+| where count > 1
+| sort - count
+```
+
+Identical raw events with `count > 1` are duplicates. There is no clean
+retroactive fix short of re-indexing — prevent it by removing the cron entry.
+
 ## 7.5 Start, stop, restart
 
 ```bash
