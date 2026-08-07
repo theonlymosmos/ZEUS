@@ -52,6 +52,85 @@ that data up now**: [doc 07 §7.8](07-operations-runbook.md).
 
 ---
 
+## 11.0b How faithful is the rebuild?
+
+The **core deployment is fully reproducible** — architecture, deception content,
+ingestion, and dashboard all come back identical. Three categories of difference
+are worth knowing about in advance.
+
+### Identical
+
+Stack topology, all five port mappings, Cowrie's identity (`prod-app-01`, Telnet
+enabled, banner and MOTD), all five honeytokens, the `root:x:*` credential
+policy, the `/home/phil` filesystem layout, Dionaea's 16 emulated services,
+Splunk's `inputs.conf` / `props.conf` parsing rules, and the dashboard XML
+byte-for-byte — all 9 panels, every SPL query, the VirusTotal drilldown.
+
+### Better than the original
+
+Two things that were silently broken will work after a rebuild:
+
+- **Honeytokens become readable.** F-01 is fixed, so `cat
+  Project_Zeus_Master_DB_Backup.sql` returns content instead of nothing.
+- **`root` / `123456` logs in.** `userdb.txt` actually loads now, and `root:x:*`
+  permits any password. The original deployment fell back to Cowrie's built-in
+  defaults, which explicitly *deny* `root`/`123456` — which is why demo scripts
+  written around that password failed. See [doc 03 §3.4](03-cowrie-config.md).
+
+### Necessarily different
+
+| Thing | Why it changes | Impact |
+|---|---|---|
+| Public IP | New allocation | Update bookmarks + NSG; make it Static |
+| Cowrie Sensor UUID | Generated at first start | Cosmetic |
+| SSH host key fingerprint | New keypair | Scanners see a "new" host — harmless, arguably good |
+| Splunk instance GUID | Fresh install | None at this scale |
+| Collected telemetry | Never committed | See §11.0 — unrecoverable |
+
+### ⚠️ Image version drift
+
+All three services use unpinned `:latest` tags:
+
+```yaml
+image: cowrie/cowrie:latest
+image: dinotools/dionaea:latest
+image: splunk/splunk:latest
+```
+
+A rebuild months from now pulls whatever `:latest` is *then*, not what ran
+originally. The architecture is unaffected, but behaviour may not be — Cowrie has
+relocated its internal paths between versions before, and that is precisely the
+class of change that produced [F-01](09-findings-and-fixes.md).
+
+**Versions the original deployment ran:**
+
+```
+Cowrie   2.9.17.dev1+gcd0770d3d   (Python 3.13.5, Twisted 25.5.0)
+Dionaea  dinotools/dionaea:latest as of 2026-04
+Splunk   splunk/splunk:latest     as of 2026-04
+```
+
+If exact reproducibility matters — for a graded submission, a paper, or anything
+another person must replicate — pin by digest rather than tag:
+
+```bash
+# Capture the digest of what you are currently running
+sudo docker inspect cowrie/cowrie:latest --format '{{index .RepoDigests 0}}'
+# e.g. cowrie/cowrie@sha256:abc123...
+```
+
+```yaml
+  cowrie:
+    image: cowrie/cowrie@sha256:<digest>    # immutable — always the same bits
+```
+
+Tags move; digests do not. For an ongoing honeypot, `:latest` is the better
+choice — you want upstream security fixes. For a reproducible artifact, pin.
+
+**After any rebuild, re-run the §11.6 verification.** Step 3 (`userdb.txt`
+loaded) and step 4 (honeyfs present where Cowrie reads it) are specifically
+designed to catch upstream path changes.
+
 ## 11.1 Provision the VM
 
 ```
