@@ -250,7 +250,7 @@ V=$(sudo docker inspect cowrie_honeypot \
 sudo ls -lat $V/lib/cowrie/tty/ | head -5
 
 sudo docker exec -it cowrie_honeypot \
-  /cowrie/cowrie-git/bin/playlog /cowrie/cowrie-git/var/lib/cowrie/tty/<NEWEST_FILE>
+  /cowrie/cowrie-env/bin/python3 -m cowrie.scripts.playlog /cowrie/cowrie-git/var/lib/cowrie/tty/<NEWEST_FILE>
 ```
 
 The session replays with original keystroke timing — typos, backspaces, thinking

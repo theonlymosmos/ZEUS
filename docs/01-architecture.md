@@ -95,7 +95,7 @@ What it records for every session:
 - `cowrie.command.input` — every command typed
 - `cowrie.session.file_download` / `file_upload` — payloads, with SHA-256
 - A **TTY replay log** per session: a byte-level recording of the terminal,
-  replayable as video via `bin/playlog`
+  replayable as video via `python3 -m cowrie.scripts.playlog`
 
 ### `dionaea_honeypot` — the malware-capture sensor
 

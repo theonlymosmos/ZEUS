@@ -15,7 +15,8 @@ Twisted Version  25.5.0
 Sensor UUID      bafc61de-32ec-11f1-a37e-46de337b5ff9
 Image            cowrie/cowrie:latest
 Container        cowrie_honeypot
-Hostname         prod-app-01
+Container host   prod-app-01        (Docker `hostname:` — NOT what the attacker sees)
+Shell prompt     svr04              (Cowrie `[honeypot] hostname`, .dist default)
 Listeners        SSH  0.0.0.0:2222
                  Telnet 0.0.0.0:2223
 Output engine    jsonlog
@@ -29,6 +30,34 @@ Startup log, first line — remember this one, it explains a lot:
 
 **There is no `cowrie.cfg`.** Cowrie fell back to the shipped `.dist` defaults.
 Every setting is stock unless overridden by an environment variable.
+
+> ### ⚠️ The attacker sees `svr04`, not `prod-app-01`
+>
+> The Compose file sets `hostname: prod-app-01`, but that is the **Docker
+> container's** hostname — it only affects the container's own `/etc/hostname`.
+> Cowrie's emulated shell takes its prompt from its own config key,
+> `[honeypot] hostname`, whose `.dist` default is `svr04`. With no `cowrie.cfg`
+> to override it, that default wins.
+>
+> Confirmed from a real captured session replay:
+>
+> ```
+> root@svr04:~# cd /home
+> root@svr04:/home# ls
+> phil
+> ```
+>
+> `svr04` is Cowrie's stock hostname and a known honeypot fingerprint — an
+> attacker who recognises it knows immediately what they are on. To fix, set the
+> environment variable in the Compose file:
+>
+> ```yaml
+>     environment:
+>       - COWRIE_HONEYPOT_HOSTNAME=prod-app-01
+> ```
+>
+> The session replay also shows the shell serving `/home/phil` correctly, which
+> independently confirms `lab_fs.pickle` is loading (see §3.3).
 
 ## 3.2 The Compose service
 
@@ -97,9 +126,12 @@ Volumes:    {"/cowrie/cowrie-git/etc":{},"/cowrie/cowrie-git/var":{}}
 ├── cowrie-env/                    Python virtualenv (the interpreter)
 │   └── bin/{python3,twistd}
 └── cowrie-git/                   ← WorkingDir. Everything relative resolves here.
-    ├── bin/                       fsctl, playlog, createdynamicprocess
+    ├── bin/                       createdynamicprocess, regen-dropin.cache ONLY
     ├── src/cowrie/                the application code (PYTHONPATH)
-    │   └── data/                  fs.pickle lives here
+    │   ├── data/                  fs.pickle lives here
+    │   └── scripts/               playlog, fsctl, createfs, asciinema
+    │                              — run as `python3 -m cowrie.scripts.<name>`,
+    │                              NOT as bin/ executables (verified 2026-08)
     ├── etc/                      ★ DECLARED VOLUME — cowrie.cfg, userdb.txt
     ├── honeyfs/                   fake file CONTENTS
     ├── share/cowrie/              shared data
@@ -678,7 +710,7 @@ sudo ls -la /var/lib/docker/volumes/6e416b9f*/\_data/lib/cowrie/tty/
 
 # Replay one
 sudo docker exec -it cowrie_honeypot \
-  /cowrie/cowrie-git/bin/playlog /cowrie/cowrie-git/var/lib/cowrie/tty/<FILENAME>
+  /cowrie/cowrie-env/bin/python3 -m cowrie.scripts.playlog /cowrie/cowrie-git/var/lib/cowrie/tty/<FILENAME>
 ```
 
 > Note the `/cowrie/…` prefix, not `/home/cowrie/…`. Older project notes use the

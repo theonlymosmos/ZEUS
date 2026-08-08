@@ -367,13 +367,13 @@ sudo ls -la $V/lib/cowrie/tty/
 
 # Replay — plays back with original keystroke timing
 sudo docker exec -it cowrie_honeypot \
-  /cowrie/cowrie-git/bin/playlog /cowrie/cowrie-git/var/lib/cowrie/tty/<FILENAME>
+  /cowrie/cowrie-env/bin/python3 -m cowrie.scripts.playlog /cowrie/cowrie-git/var/lib/cowrie/tty/<FILENAME>
 ```
 
 Pick a large file (20 KB+) for a demo — small ones are usually bots that
 connected and disconnected. Currently 19 recordings exist; the largest is 46 KB.
 
-> Older notes use `/home/cowrie/cowrie-git/bin/playlog`. That path does not exist
+> Older notes use `/home/cowrie/cowrie-env/bin/python3 -m cowrie.scripts.playlog`. That path does not exist
 > inside the container. Use `/cowrie/…`.
 
 ### Captured payloads
